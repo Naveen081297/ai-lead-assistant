@@ -1,0 +1,25 @@
+{"id": "q01", "question": "How much is the Data Analytics Pro course including GST?", "expected_sources": ["fee-sheet-2027.md", "course-data-analytics-pro.md"], "must_contain": ["1,05,020"]}
+{"id": "q02", "question": "What days and times are the Full Stack Web Development classes?", "expected_sources": ["course-full-stack-web.md"], "must_contain": ["7:00"]}
+{"id": "q03", "question": "How long is the UI/UX design program?", "expected_sources": ["course-ui-ux-design.md"], "must_contain": ["20 weeks"]}
+{"id": "q04", "question": "I'm a 12th pass student, can I join the digital marketing course?", "expected_sources": ["course-digital-marketing.md", "admissions-process.md"], "must_contain": ["yes"]}
+{"id": "q05", "question": "When does the next Data Analytics batch start after March 2027?", "expected_sources": ["intake-calendar-2027.md"], "must_contain": ["10 April"]}
+{"id": "q06", "question": "Can I pay the fees in instalments?", "expected_sources": ["fee-sheet-2027.md"], "must_contain": ["40%"]}
+{"id": "q07", "question": "Is there any scholarship for women?", "expected_sources": ["scholarships-and-discounts.md"], "must_contain": ["20%"]}
+{"id": "q08", "question": "Can I use the merit scholarship and the early bird discount together?", "expected_sources": ["scholarships-and-discounts.md"], "must_contain": ["one"]}
+{"id": "q09", "question": "If I cancel 10 days before my batch starts, how much money do I get back?", "expected_sources": ["refund-and-cancellation-policy.md"], "must_contain": ["registration fee"]}
+{"id": "q10", "question": "Is the registration fee refundable?", "expected_sources": ["fee-sheet-2027.md", "refund-and-cancellation-policy.md"], "must_contain": ["non-refundable"]}
+{"id": "q11", "question": "Do you guarantee a job after the course?", "expected_sources": ["placement-support.md"], "must_contain": ["not guarantee"]}
+{"id": "q12", "question": "What salary did data analytics graduates get?", "expected_sources": ["placement-support.md"], "must_contain": ["5.2"]}
+{"id": "q13", "question": "How many questions are on the aptitude test and what is the pass mark?", "expected_sources": ["admissions-process.md"], "must_contain": ["25", "60%"]}
+{"id": "q14", "question": "Which documents do I need to submit for admission?", "expected_sources": ["admissions-process.md"], "must_contain": ["photo"]}
+{"id": "q15", "question": "How much RAM does my laptop need for the full stack course?", "expected_sources": ["course-full-stack-web.md", "online-learning-and-requirements.md"], "must_contain": ["16 GB"]}
+{"id": "q16", "question": "Are class recordings available if I miss a session?", "expected_sources": ["online-learning-and-requirements.md"], "must_contain": ["24 hours"]}
+{"id": "q17", "question": "What is the pass mark for the certificate and how is it graded?", "expected_sources": ["certification-and-assessment.md"], "must_contain": ["60%"]}
+{"id": "q18", "question": "Is your certificate UGC approved?", "expected_sources": ["certification-and-assessment.md"], "must_contain": ["not"]}
+{"id": "q19", "question": "Can I attend a free demo class?", "expected_sources": ["faq-general.md"], "must_contain": ["Saturday"]}
+{"id": "q20", "question": "Do you provide a hostel near the Pune campus?", "expected_sources": ["faq-general.md"], "must_contain": ["no"]}
+{"id": "q21", "question": "Where is your Bengaluru centre and which courses run there?", "expected_sources": ["about-the-academy.md"], "must_contain": ["Koramangala"]}
+{"id": "q22", "question": "Do you offer a cybersecurity or ethical hacking course?", "expected_sources": [], "must_contain": [], "expect_refusal": true}
+{"id": "q23", "question": "What are the fees for batches starting in 2028?", "expected_sources": [], "must_contain": [], "expect_refusal": true}
+{"id": "q24", "question": "Who is the CEO of the academy?", "expected_sources": [], "must_contain": [], "expect_refusal": true}
+{"id": "q25", "question": "Do you accept payment in cryptocurrency like Bitcoin?", "expected_sources": ["fee-sheet-2027.md"], "must_contain": [], "expect_refusal": false}
