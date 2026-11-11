@@ -9,9 +9,9 @@ lead and drafts a reply. Compared with run_eval.py on the same file:
 - Every reply is judged, including "a counsellor will follow up" replies (run_eval
   skips refusals, which let a wrong claim inside a refusal go unchecked).
 
-Note: the agent's draft validator forbids figures that aren't written in a passage,
-so a question whose reference answer is a computed amount (h03, h04) can only be
-answered with the documented inputs (15% and 1,24,000), not the total.
+Note: the agent's draft validator only accepts figures written in a passage or
+returned by the calculator tools (calculate, shift_date), so computed answers
+(h03-h05) depend on the agent using those tools rather than its own arithmetic.
 """
 
 from __future__ import annotations

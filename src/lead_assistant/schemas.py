@@ -62,6 +62,20 @@ class SearchDocsArgs(BaseModel):
     query: str = Field(min_length=3, max_length=300)
 
 
+class CalculateArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expression: str = Field(min_length=1, max_length=200,
+                            description="Arithmetic on figures from the passages, e.g. '1,24,000 * 15%'.")
+    purpose: str = Field(max_length=120, description="What the result means, e.g. 'merit scholarship saving'.")
+
+
+class ShiftDateArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start: date = Field(description="A date written in the passages, as YYYY-MM-DD.")
+    days: int = Field(ge=-366, le=366, description="Days to add; negative for 'N days before'.")
+    purpose: str = Field(max_length=120, description="What the result means, e.g. 'application deadline'.")
+
+
 class NoArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,6 +129,14 @@ class Reply(BaseModel):
     citations: list[Citation]
 
 
+class Calculation(BaseModel):
+    """A figure the reply may state because code computed it from documented figures."""
+    tool: Literal["calculate", "shift_date"]
+    input: str
+    purpose: str
+    result: str
+
+
 class AgentResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -123,6 +145,8 @@ class AgentResult(BaseModel):
     score: LeadScore
     reply: Reply
     unanswered_questions: list[str]
+    # How each computed figure in the reply was worked out, for the reviewer to check.
+    calculations: list[Calculation] = []
     # Anything a human reviewer should know: possible_prompt_injection, fallback_reply,
     # draft_retried, not_eligible, forced_step:<tool>, ...
     flags: list[str]

@@ -179,3 +179,14 @@ def test_score_and_draft_need_a_lead(agent, tmp_path):
     for tool in (agent._tool_score_lead, agent._tool_draft_reply):
         with pytest.raises(ToolError, match="get_lead first"):
             tool(work(), NoArgs(), audit)
+
+
+def test_calculate_needs_retrieved_figures_first(agent, tmp_path):
+    from lead_assistant.schemas import CalculateArgs
+    w, audit = {**work(), "computed": []}, AuditRun(tmp_path / "a.jsonl", "L-2005", "test")
+    args = CalculateArgs(expression="89,000 + 16,020", purpose="total")
+    with pytest.raises(ToolError, match="not found in the retrieved passages"):
+        agent._tool_calculate(w, args, audit)  # nothing retrieved yet
+    agent._tool_search_docs(w, SearchDocsArgs(query="fees"), audit)
+    assert "1,05,020" in agent._tool_calculate(w, args, audit)
+    assert w["computed"][0]["result"] == "1,05,020"

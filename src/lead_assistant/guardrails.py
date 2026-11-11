@@ -39,7 +39,7 @@ def detect_injection(text: str) -> list[str]:
     return [p for p in _INJECTION_PATTERNS if re.search(p, t)]
 
 
-def _numbers(text: str) -> set[str]:
+def numbers_in(text: str) -> set[str]:
     """Numbers in `text`, commas removed, so 1,46,320 and 146,320 compare equal.
     Single digits are skipped: they're counts ("3 months") that docs often spell out."""
     text = _CITATION.sub(" ", text)
@@ -55,8 +55,9 @@ def _strip_trailing_punct(s: str) -> str:
     return s.rstrip(".,;:!?)")
 
 
-def validate_draft(draft: DraftOutput, passages: list[dict]) -> list[str]:
-    """Check a drafted reply against the passages it may use. Returns a list of
+def validate_draft(draft: DraftOutput, passages: list[dict], computed: list[str] = ()) -> list[str]:
+    """Check a drafted reply against the passages it may use. `computed` holds results
+    of the calculator tools, which only accept documented operands. Returns a list of
     problems; an empty list means the draft passed."""
     errors: list[str] = []
     numbers = {p["n"] for p in passages}
@@ -73,12 +74,13 @@ def validate_draft(draft: DraftOutput, passages: list[dict]) -> list[str]:
         errors.append(f"cites passages that don't exist: {bad}")
 
     # 2. Every figure (fee, percentage, date, year, phone number) must appear in a
-    #    passage. This is what stops a made-up or injected fee. It also rules out
-    #    computed amounts (e.g. 15% of 1,24,000): replies quote the documents'
-    #    figures and leave arithmetic to the counsellor's invoice.
-    if unsupported := sorted(_numbers(draft.body) - _numbers(source_text)):
-        errors.append(f"figures not found in the passages: {unsupported}")
-    if _numbers(draft.body) and not cited:
+    #    passage or be the result of a verified calculation. This is what stops a
+    #    made-up or injected fee. Arithmetic the model does in its head (rather than
+    #    through the calculator tools) fails here.
+    allowed = numbers_in(source_text) | numbers_in(" ".join(computed))
+    if unsupported := sorted(numbers_in(draft.body) - allowed):
+        errors.append(f"figures not found in the passages or verified calculations: {unsupported}")
+    if numbers_in(draft.body) and not cited:
         errors.append("states figures but cites no passage")
 
     # 3. Links and email addresses only if a passage contains them (the academy's own).
