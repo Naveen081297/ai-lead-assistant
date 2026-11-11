@@ -7,3 +7,4 @@ __pycache__/
 chroma_db/
 eval/results/
 PLAN.md
+logs/

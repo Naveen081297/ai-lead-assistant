@@ -55,6 +55,24 @@ class Settings(BaseSettings):
     # (5 requests/min per model, so set 4). 0 = no throttle.
     llm_requests_per_minute: float = 0
 
+    # ---------- Week 2: agent ----------
+    # Hard cap on agent -> tools round trips, so a confused or hijacked model
+    # can't loop forever (each round is a paid LLM call).
+    agent_max_steps: int = 8
+    # One JSON line per agent run: inputs, every tool call, validation results, output.
+    audit_log_path: Path = PROJECT_ROOT / "logs" / "audit.jsonl"
+
+    # Where get_lead reads leads: "sample" (data/sample_leads.json, offline) or
+    # "zoho" (Zoho CRM REST API; needs the three ZOHO_* secrets below).
+    lead_source: str = "sample"
+    sample_leads_path: Path = PROJECT_ROOT / "data" / "sample_leads.json"
+    # Zoho data centre: com (US), in (India), eu, com.au, jp, ca ...
+    zoho_dc: str = "com"
+    zoho_api_version: str = "v8"
+    zoho_client_id: str | None = None
+    zoho_client_secret: SecretStr | None = None
+    zoho_refresh_token: SecretStr | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

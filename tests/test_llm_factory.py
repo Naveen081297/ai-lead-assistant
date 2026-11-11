@@ -10,6 +10,14 @@ from lead_assistant.config import Settings
 from lead_assistant.rag import make_llm, make_structured_llm
 
 
+@pytest.fixture(autouse=True)
+def _ignore_local_overrides(monkeypatch):
+    # These tests check the defaults in config.py, so a developer's own
+    # CLAUDE_EFFORT or CHAT_MODEL environment variable must not leak in.
+    for name in ("CLAUDE_EFFORT", "CHAT_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def settings(**overrides) -> Settings:
     # Pass values by env-var name; init values take priority over the real environment.
     values = {"GEMINI_API_KEY": "test-gemini", "LEAD_ASSISTANT_CLAUDE_KEY": "test-claude", **overrides}
