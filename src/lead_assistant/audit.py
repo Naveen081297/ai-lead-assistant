@@ -40,3 +40,32 @@ class AuditRun:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(self.record, ensure_ascii=False, default=str) + "\n")
+
+
+# ---------- Week 3: human decisions ----------
+
+def find_run(path: Path, run_id: str) -> dict | None:
+    """The audit record for run_id, or None. A linear scan is fine at this volume;
+    a database would replace the JSONL file long before it got slow."""
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            if f'"run_id": "{run_id}"' not in line:  # cheap pre-filter before parsing
+                continue
+            record = json.loads(line)
+            if record.get("run_id") == run_id and "events" in record:
+                return record
+    return None
+
+
+def record_decision(path: Path, decision: dict[str, Any]) -> dict[str, Any]:
+    """Append a human decision as its own line. Agent runs are never rewritten,
+    so the log stays append-only: what the AI proposed, then what a person did."""
+    record = {"kind": "human_decision",
+              "decided_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              **decision}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record

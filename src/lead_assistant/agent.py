@@ -33,7 +33,8 @@ from lead_assistant.leads import LeadNotFound, LeadSource, make_lead_source
 from lead_assistant.rag import RagPipeline, make_llm, make_structured_llm
 from lead_assistant.calculator import CalculationError, calculate, shift_date
 from lead_assistant.schemas import (AgentResult, CalculateArgs, Calculation, Citation, DraftOutput, GetLeadArgs,
-                                    IntentAssessment, Lead, LeadScore, NoArgs, Reply, SearchDocsArgs, ShiftDateArgs)
+                                    IntentAssessment, Lead, LeadScore, LeadSummary, NoArgs, Reply, SearchDocsArgs,
+                                    ShiftDateArgs)
 from lead_assistant.scoring import assess_intent, combine, rule_score
 
 # ---------- tool definitions: exactly what the model sees ----------
@@ -221,9 +222,13 @@ class LeadAgent:
         draft = DraftOutput.model_validate(work["draft"])
         cited = {int(n) for n in re.findall(r"\[(\d+)\]", draft.body)}
         flags = list(dict.fromkeys(work["flags"]))  # dedupe, keep order
+        lead = Lead.model_validate(work["lead"])
         result = AgentResult(
             run_id=audit.run_id,
             lead_id=work["lead_id"],
+            lead=LeadSummary(name=" ".join(filter(None, [lead.first_name, lead.last_name])),
+                             email=lead.email, program_interest=lead.program_interest,
+                             message=lead.message),
             score=LeadScore.model_validate(work["score"]),
             reply=Reply(subject=draft.subject, body=draft.body,
                         citations=[Citation(n=p["n"], source=p["source"], title=p["title"])

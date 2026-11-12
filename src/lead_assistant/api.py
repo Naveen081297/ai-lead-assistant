@@ -6,17 +6,20 @@ Docs: http://127.0.0.1:8000/docs
 
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager, contextmanager
 
 import anthropic
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from langchain_google_genai.chat_models import GoogleGenerativeAIError, GoogleRateLimitError
 from pydantic import BaseModel, Field
 
 from lead_assistant.agent import LeadAgent
+from lead_assistant.audit import find_run, record_decision
+from lead_assistant.config import get_settings
 from lead_assistant.leads import LeadNotFound
 from lead_assistant.rag import Passage, RagPipeline
-from lead_assistant.schemas import AgentResult
+from lead_assistant.schemas import AgentResult, HumanDecision
 
 
 class AskRequest(BaseModel):
@@ -58,7 +61,21 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="AI Lead Assistant", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="AI Lead Assistant", version="0.3.0", lifespan=lifespan)
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Every endpoint except /health needs the shared secret once LEAD_ASSISTANT_API_KEY is set.
+    compare_digest takes the same time whether the first or last character is wrong,
+    so the key can't be guessed one character at a time from response timings."""
+    expected = get_settings().api_key
+    if expected is None:
+        return
+    if x_api_key is None or not secrets.compare_digest(x_api_key, expected.get_secret_value()):
+        raise HTTPException(401, "Missing or wrong X-API-Key header.")
+
+
+protected = [Depends(require_api_key)]
 
 
 @contextmanager
@@ -82,7 +99,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/agent/process-lead", response_model=AgentResult)
+@app.post("/agent/process-lead", response_model=AgentResult, dependencies=protected)
 def process_lead(body: ProcessLeadRequest, request: Request) -> AgentResult:
     """Score a lead and draft a reply. Reads the CRM but writes nothing: in Week 3,
     n8n shows this result to a person, and only their approval updates Zoho."""
@@ -93,7 +110,22 @@ def process_lead(body: ProcessLeadRequest, request: Request) -> AgentResult:
         raise HTTPException(404, f"Lead {body.lead_id} not found.")
 
 
-@app.post("/ask", response_model=AskResponse)
+@app.post("/agent/decision", dependencies=protected)
+def agent_decision(body: HumanDecision) -> dict:
+    """n8n calls this after the approver clicks, so the audit log holds both what the
+    agent proposed and what a person decided. It writes nothing to Zoho: n8n does that."""
+    path = get_settings().audit_log_path
+    run = find_run(path, body.run_id)
+    if run is None or run.get("lead_id") != body.lead_id:
+        # Catches a mis-wired workflow recording a decision against the wrong run.
+        raise HTTPException(404, f"No agent run {body.run_id} for lead {body.lead_id}.")
+    if body.written_to_crm and body.decision != "approved":
+        raise HTTPException(422, "Only an approved run can be written to the CRM.")
+    record_decision(path, body.model_dump())
+    return {"recorded": True, "run_id": body.run_id}
+
+
+@app.post("/ask", response_model=AskResponse, dependencies=protected)
 def ask(body: AskRequest, request: Request) -> AskResponse:
     # Sync def: FastAPI runs it in a thread pool, so the blocking LLM call
     # doesn't stall other requests.

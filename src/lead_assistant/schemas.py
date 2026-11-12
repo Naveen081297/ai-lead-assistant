@@ -137,11 +137,20 @@ class Calculation(BaseModel):
     result: str
 
 
+class LeadSummary(BaseModel):
+    """What the human approver needs to see next to the draft: who asked, and what."""
+    name: str
+    email: str | None
+    program_interest: str | None
+    message: str
+
+
 class AgentResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
     lead_id: str
+    lead: LeadSummary
     score: LeadScore
     reply: Reply
     unanswered_questions: list[str]
@@ -154,3 +163,20 @@ class AgentResult(BaseModel):
     # Week 3: nothing is written to Zoho without a human yes, whatever this says.
     # It marks drafts that need a closer look than usual.
     needs_attention: bool
+
+
+# ---------- Week 3: the human decision, sent back by n8n ----------
+
+class HumanDecision(BaseModel):
+    """Recorded in the audit log next to the run it decides, so the trail shows
+    what the AI proposed and what a person did with it."""
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    lead_id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    decision: Literal["approved", "rejected"]
+    reviewer: str = Field(min_length=1, max_length=120)
+    reply_edited: bool = False
+    comment: str = Field(default="", max_length=2000)
+    # Set by n8n after the Zoho update succeeds (approved runs only).
+    written_to_crm: bool = False

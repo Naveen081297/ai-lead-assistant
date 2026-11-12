@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     zoho_client_secret: SecretStr | None = None
     zoho_refresh_token: SecretStr | None = None
 
+    # ---------- Week 3: n8n ----------
+    # Shared secret n8n sends in the X-API-Key header. Once the API is on a public
+    # server, anyone who finds the URL could otherwise spend your Claude credits.
+    # Unset = no check (local development only; the Docker deploy requires it).
+    api_key: SecretStr | None = Field(default=None, validation_alias="LEAD_ASSISTANT_API_KEY")
+
 
 @lru_cache
 def get_settings() -> Settings:

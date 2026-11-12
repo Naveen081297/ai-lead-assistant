@@ -1,0 +1,54 @@
+{
+  "name": "Lead assistant: error alert",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "71373c34-929b-4dd8-ba1c-7ba26fae19ed",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "lead-assistant@example.com",
+        "toEmail": "alerts@example.com",
+        "subject": "=n8n workflow failed: {{ $json.workflow.name }}",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $json.workflow.name }}\nExecution: {{ $json.execution.id }} {{ $json.execution.url ?? '' }}\nFailed node: {{ $json.execution.lastNodeExecuted }}\n\nError: {{ $json.execution.error?.message ?? 'unknown' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "55d5318c-30f5-47ea-b48e-7d4b052d8209",
+      "name": "Alert email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Alert email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

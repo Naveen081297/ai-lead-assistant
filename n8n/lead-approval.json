@@ -1,0 +1,633 @@
+{
+  "name": "Lead assistant: Zoho lead approval",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "zoho-new-lead",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "43d60768-e8de-468d-be1e-2dd4fdb3b138",
+      "name": "Zoho new lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "09e33a2f-fea7-4679-adb7-09f275fff859"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dbb0c5e3-881f-4e46-8b17-87f5e85c8477",
+              "name": "lead_id",
+              "value": "={{ String($json.body?.lead_id ?? $json.query?.lead_id ?? '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "ab374286-8936-4e3d-a0cc-7bef1e2a4597",
+              "name": "api_base_url",
+              "value": "http://127.0.0.1:8000",
+              "type": "string"
+            },
+            {
+              "id": "a922cf8e-1912-451d-8c06-2b313db3f240",
+              "name": "zoho_accounts_url",
+              "value": "https://accounts.zoho.com",
+              "type": "string"
+            },
+            {
+              "id": "e964a0a9-f29f-4b86-9b55-9884793e38a7",
+              "name": "zoho_api_base",
+              "value": "https://www.zohoapis.com/crm/v8",
+              "type": "string"
+            },
+            {
+              "id": "46e8d15e-17d6-4a84-804f-50c366906836",
+              "name": "approver_email",
+              "value": "approver@example.com",
+              "type": "string"
+            },
+            {
+              "id": "a1df22aa-322f-435b-a089-fc28dbd71d7c",
+              "name": "alert_email",
+              "value": "alerts@example.com",
+              "type": "string"
+            },
+            {
+              "id": "38b3e635-ab38-4331-aad3-f11010d8f000",
+              "name": "from_email",
+              "value": "lead-assistant@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dfaa84de-f740-4cfc-b843-0923e3c9dded",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base_url }}/agent/process-lead",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $json.lead_id }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "d93da6b0-f85e-4c31-9746-2e4aca80bcc0",
+      "name": "Run agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds the approval email. Everything from the lead is untrusted, so it is\n// HTML-escaped: a message containing <a href=...>Click to approve</a> shows up\n// as text in the approver's inbox instead of as a working link.\nconst r = $('Run agent').first().json;\nconst cfg = $('Config').first().json;\nconst esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) =>\n  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst list = (xs) => xs.length ? '<ul>' + xs.map((x) => `<li>${esc(x)}</li>`).join('') + '</ul>' : '<p>None</p>';\nconst oneLine = (s) => String(s ?? '').replace(/[\\r\\n]+/g, ' ').slice(0, 80);\n\nconst formUrl = $execution.resumeFormUrl;\nconst score = r.score.breakdown.map((b) => `${b.rule}: ${b.points}`);\nconst calcs = r.calculations.map((c) => `${c.purpose}: ${c.input} = ${c.result}`);\nconst cites = r.reply.citations.map((c) => `[${c.n}] ${c.title} (${c.source})`);\n\nconst html = `\n<h2>Reply to approve: ${esc(r.lead.name)} (lead ${esc(r.lead_id)})</h2>\n<p><b>Score ${r.score.score}/100, ${esc(r.score.band)}</b>${r.needs_attention ? ' &nbsp;<b style=\"color:#b45309\">Needs a closer look</b>' : ''}</p>\n<p><b>Flags:</b> ${r.flags.length ? esc(r.flags.join(', ')) : 'none'}</p>\n<h3>What the lead wrote</h3>\n<blockquote style=\"white-space:pre-wrap;border-left:3px solid #ccc;padding-left:8px\">${esc(r.lead.message)}</blockquote>\n<h3>Draft reply</h3>\n<p><b>Subject:</b> ${esc(r.reply.subject)}</p>\n<pre style=\"white-space:pre-wrap;font-family:inherit;background:#f6f6f6;padding:8px\">${esc(r.reply.body)}</pre>\n<h3>Sources cited</h3>${list(cites)}\n<h3>Calculations (check these)</h3>${list(calcs)}\n<h3>Questions the documents don't answer</h3>${list(r.unanswered_questions)}\n<h3>Score breakdown</h3>${list(score)}\n<p style=\"font-size:18px\"><a href=\"${esc(formUrl)}\">Open the approval form</a></p>\n<p style=\"color:#666\">Nothing is written to Zoho CRM until you approve. Run ${esc(r.run_id)}.</p>`;\n\nreturn [{ json: {\n  to: cfg.approver_email,\n  subject: `Approve reply: ${oneLine(r.lead.name)} (${r.score.score}, ${r.score.band})`,\n  html,\n} }];\n"
+      },
+      "id": "8b4d956f-e034-4a56-8759-385a17e5fc0e",
+      "name": "Prepare approval email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.from_email }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "932d3cdb-8e9c-4c35-8bd4-a0b2b28f8b36",
+      "name": "Email approver",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "incomingAuthentication": "basicAuth",
+        "formTitle": "Approve the AI reply",
+        "formDescription": "=Lead {{ $('Run agent').first().json.lead_id }}: {{ $('Run agent').first().json.lead.name }}, score {{ $('Run agent').first().json.score.score }} ({{ $('Run agent').first().json.score.band }}). The draft is in the approval email. Approving writes the score, notes and reply to Zoho CRM. An edited reply is written exactly as typed and skips the AI fact checks.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approve"
+                  },
+                  {
+                    "option": "Reject"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Your name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Edited reply",
+              "fieldType": "textarea",
+              "placeholder": "Leave empty to approve the draft as written"
+            },
+            {
+              "fieldLabel": "Comment",
+              "fieldType": "textarea"
+            }
+          ]
+        },
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 3,
+        "resumeUnit": "days",
+        "options": {}
+      },
+      "id": "f08693d5-311b-4c76-a5b7-0ed1dd4b8b51",
+      "name": "Wait for approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        200
+      ],
+      "webhookId": "601aad31-29ca-4241-ab44-248a5d11ed2e"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e51fc672-b772-4a2b-b96a-e56c05663c45",
+              "leftValue": "={{ $json.Decision }}",
+              "rightValue": "Approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1433909d-84b8-421c-9f24-5f7dee1ef3c4",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns the agent result plus the approver's form answers into a Zoho update.\n// If the approver edited the reply, their text is what gets written.\nconst r = $('Run agent').first().json;\nconst form = $('Wait for approval').first().json;\nconst edited = String(form['Edited reply'] ?? '').trim();\nconst reviewer = String(form['Your name'] ?? '').trim();\nconst comment = String(form['Comment'] ?? '').trim();\nconst cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);\n\nconst notes = [\n  `Approved by ${reviewer}${edited ? ' (reply edited)' : ''}. Run ${r.run_id}.`,\n  comment && `Reviewer comment: ${comment}`,\n  `Score ${r.score.score}/100 (${r.score.band}): ` + r.score.breakdown.map((b) => `${b.rule} ${b.points}`).join('; '),\n  r.flags.length && `Flags: ${r.flags.join(', ')}`,\n  r.calculations.length && 'Calculations: ' + r.calculations.map((c) => `${c.purpose}: ${c.input} = ${c.result}`).join('; '),\n  r.unanswered_questions.length && 'For a counsellor: ' + r.unanswered_questions.join(' | '),\n  r.reply.citations.length && 'Sources: ' + r.reply.citations.map((c) => `[${c.n}] ${c.source}`).join(', '),\n].filter(Boolean).join('\\n');\n\nreturn [{ json: {\n  lead_id: r.lead_id,\n  run_id: r.run_id,\n  reviewer,\n  comment,\n  reply_edited: Boolean(edited),\n  zoho_body: {\n    data: [{\n      AI_Score: r.score.score,\n      AI_Band: cap(r.score.band),\n      AI_Reply_Subject: r.reply.subject.slice(0, 255),\n      AI_Approved_Reply: (edited || r.reply.body).slice(0, 32000),\n      AI_Notes: notes.slice(0, 32000),\n      AI_Run_ID: r.run_id,\n    }],\n    // Don't fire Zoho workflow rules from this update. If the \"new lead\" rule were\n    // ever changed to \"create or edit\", this update would otherwise re-trigger the\n    // whole flow in a loop.\n    trigger: [],\n  },\n} }];\n"
+      },
+      "id": "dd51d897-b8c4-4f2e-afa5-a61abb0340f6",
+      "name": "Build Zoho update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.zoho_accounts_url }}/oauth/v2/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "861f9a30-67a7-4748-a493-2a2831d2bee6",
+      "name": "Get Zoho token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('Config').first().json.zoho_api_base }}/Leads/{{ $('Build Zoho update').first().json.lead_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Zoho-oauthtoken {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Zoho update').first().json.zoho_body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ccce8da1-6d3c-449c-95db-287e13dbbec3",
+      "name": "Update Zoho lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zoho can answer HTTP 200 and still reject the record (e.g. a wrong field API name),\n// so the per-record status is checked. Throwing sends the item to the error branch.\nconst rec = $json.data?.[0];\nif (rec?.status !== 'success') {\n  throw new Error('Zoho did not update the lead: ' + JSON.stringify(rec ?? $json).slice(0, 500));\n}\nreturn [{ json: { ...$('Build Zoho update').first().json, zoho_message: rec.message } }];\n"
+      },
+      "id": "daf4839c-7202-4e81-9b7e-7696aeb0d22b",
+      "name": "Check Zoho result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.api_base_url }}/agent/decision",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $json.run_id, lead_id: $json.lead_id, decision: 'approved', reviewer: $json.reviewer, reply_edited: $json.reply_edited, comment: $json.comment, written_to_crm: true }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d6d11734-e2ce-41fd-943e-aaac14bfdae5",
+      "name": "Record approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "41df3ad3-6c05-40ac-881d-b301ec2ead9f",
+              "leftValue": "={{ $json.Decision }}",
+              "rightValue": "Reject",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7dfa0abe-a4f7-4d74-83a9-1801273408f1",
+      "name": "Rejected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.api_base_url }}/agent/decision",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $('Run agent').first().json.run_id, lead_id: $('Run agent').first().json.lead_id, decision: 'rejected', reviewer: String($json['Your name'] ?? '').trim(), comment: String($json['Comment'] ?? '').trim() }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "3488ea0a-e3cf-4cbc-bf65-2ba547c24ed9",
+      "name": "Record rejection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "9fbdc54c-8024-4fe8-803d-3184cc9d193d",
+      "name": "No decision in 3 days",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.from_email }}",
+        "toEmail": "={{ $('Config').first().json.alert_email }}",
+        "subject": "=Lead assistant failed for lead {{ $('Config').first().json.lead_id }}",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $workflow.name }}\nExecution: {{ $execution.id }}\nLead: {{ $('Config').first().json.lead_id }}\n\nError: {{ (typeof $json.error === 'object' ? $json.error?.message : $json.error) ?? JSON.stringify($json).slice(0, 2000) }}\n\nFull details are in the n8n execution log.\nNothing was written to Zoho unless this came from 'Record approval' (Zoho already updated, audit log not).",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a0f0fa95-1c1a-479a-b9ea-c3548a54d2f4",
+      "name": "Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1320,
+        640
+      ]
+    }
+  ],
+  "connections": {
+    "Zoho new lead": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Run agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run agent": {
+      "main": [
+        [
+          {
+            "node": "Prepare approval email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare approval email": {
+      "main": [
+        [
+          {
+            "node": "Email approver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email approver": {
+      "main": [
+        [
+          {
+            "node": "Wait for approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Build Zoho update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Zoho update": {
+      "main": [
+        [
+          {
+            "node": "Get Zoho token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Zoho token": {
+      "main": [
+        [
+          {
+            "node": "Update Zoho lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Zoho lead": {
+      "main": [
+        [
+          {
+            "node": "Check Zoho result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Zoho result": {
+      "main": [
+        [
+          {
+            "node": "Record approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record approval": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rejected?": {
+      "main": [
+        [
+          {
+            "node": "Record rejection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No decision in 3 days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record rejection": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

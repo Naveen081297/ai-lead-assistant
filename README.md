@@ -1,12 +1,56 @@
-﻿# AI Lead Assistant for Zoho CRM
+# AI Lead Assistant for Zoho CRM
 
 A new lead arrives in Zoho CRM. n8n sends it to a Python AI agent, which answers the lead's question from course documents, scores the lead and drafts a reply. A person approves the draft, then n8n writes everything back to Zoho.
 
 Roadmap: Week 1, RAG core. Week 2, a LangGraph agent with lead scoring and prompt-injection guardrails. Week 3, n8n orchestration with a human approval step and Zoho CRM write-back.
 
-**Status:** Weeks 1 and 2 are done. `/ask` answers with citations (25/25 on the basic eval, 7/10 on the harder set). `/agent/process-lead` scores a lead and drafts a cited reply, passes all 5 prompt-injection tests, and scores 9/10 on the harder set, helped by code-checked calculator tools (details under Results). Answers come from Claude Haiku 5.5; embeddings run locally (free) with `BAAI/bge-small-en-v1.5`.
+**Status:** Weeks 1 and 2 are done. Week 3 is in progress: the n8n approval workflow runs end to end locally against a mock Zoho (details under "How the n8n workflow works"). The real Zoho account and the DigitalOcean deploy are next. `/ask` answers with citations (25/25 on the basic eval, 7/10 on the harder set). `/agent/process-lead` scores a lead and drafts a cited reply, passes all 5 prompt-injection tests, and scores 9/10 on the harder set, helped by code-checked calculator tools (details under Results). Answers come from Claude Haiku 5.5; embeddings run locally (free) with `BAAI/bge-small-en-v1.5`.
 
 All course documents in `data/docs/` and leads in `data/sample_leads.json` are made up ("Brightwater Digital Academy"). No real student or academy data is used.
+
+## How the n8n workflow works (Week 3)
+
+```
+Zoho CRM: workflow rule "lead created" → webhook (X-Webhook-Token header)
+   ▼
+n8n  Zoho new lead → Config → Run agent ──────────────(fails 3×)──► Alert email
+                                 │ POST /agent/process-lead (X-API-Key)
+                                 ▼
+     Prepare approval email (lead text HTML-escaped) → Email approver
+                                 ▼
+     Wait for approval: form behind basic auth, signed link, 3-day limit
+          │ Approve                 │ Reject                 │ no answer
+          ▼                         ▼                        ▼
+     Build Zoho update         Record rejection          end (nothing written)
+     Get Zoho token (write scope)   (audit log only)
+     PUT /crm/v8/Leads/{id}, trigger: []
+     Check per-record status ──(fails)──► Alert email
+     Record approval → POST /agent/decision (audit log)
+```
+
+Files: `n8n/lead-approval.json`, `n8n/error-alert.json` (catches anything the error branches don't). Setup: [docs/week3-setup.md](docs/week3-setup.md).
+
+**Design decisions:**
+- **The AI service can't write to the CRM.** The API reads Zoho with a read-only token. Only n8n holds a token with update scope, and it uses it only after a person clicks Approve. A prompt injection that fooled the agent completely still couldn't change a CRM record.
+- **Update by ID, not upsert.** The plan said "upsert", but the lead already exists and n8n has its ID. Upsert matches on fields like Email, so it could create a second lead if the email had been edited in between. `PUT /Leads/{id}` can only change the record that triggered the flow.
+- **`trigger: []`** on the update stops it from firing Zoho workflow rules, so a rule set to "create or edit" can't loop.
+- **Zoho's "200 but failed".** Zoho can return HTTP 200 with `"status": "error"` for a record, for example when a field name is wrong. A Code node checks the per-record status, so this goes to the alert branch instead of passing as success.
+- **The approver sees what the lead wrote.** `AgentResult.lead` carries the name, email, program and original message. The email HTML-escapes it, because the message is untrusted and could otherwise put a fake "approve here" link in the approver's inbox.
+- **Edits are allowed and recorded.** An edited reply is written exactly as typed (it skips the AI fact checks, and the form says so). `reply_edited` is stored in Zoho's notes and in the audit log.
+- **Human decisions in the audit log.** `POST /agent/decision` appends a `human_decision` line after the run it decides, and returns 404 if that run doesn't exist for that lead. The log shows what the AI proposed and what a person did with it.
+
+**Local end-to-end test (2026-11-12).** n8n 2.47.4 ran locally, with the real agent (Claude Haiku 5.5, sample leads), a mock Zoho server and an SMTP sink:
+
+| Case | Result |
+|---|---|
+| Webhook without the token / with the wrong token | 403, no execution |
+| Approval form without login, or login without the URL signature | 401 |
+| L-1001 approved | Zoho got score 95/Hot, the reply, notes and run ID with `Zoho-oauthtoken` auth and `trigger: []`; `human_decision` (approved, written) logged |
+| L-1002 approved with an edited reply, Zoho returns 200 + `INVALID_DATA` | The edited text was sent; the failure was caught; an alert was emailed; no "written" decision logged |
+| L-1003 rejected | Nothing sent to Zoho; the rejection and comment logged |
+| L-9999 (doesn't exist) | 3 attempts (404s, no LLM cost), then an alert |
+
+Not yet tested: a real Zoho account and its webhook, the 3-day timeout, and the error workflow (it needs an unhandled failure). One known gap: n8n also retries 4xx errors that can't succeed. That's harmless here because the API's 404 and 422 answers come before any LLM call.
 
 ## How the agent works (Week 2)
 
@@ -36,14 +80,14 @@ The agent is prompted to split the lead's message into separate questions and se
 
 **Guardrails, in layers.** The lead's message is untrusted text, so no single layer is relied on:
 1. **Prompts.** The message is wrapped in `<lead_message>` tags, and all three prompts (agent, intent, draft) say it is data and must not be obeyed.
-2. **Narrow tools.** No tool writes anything; writing to Zoho happens in Week 3 after human approval. `score_lead` and `draft_reply` take no input from the model. `get_lead` can read only one lead.
+2. **Narrow tools.** No tool writes anything. Only n8n writes to Zoho, after a person approves (Week 3). `score_lead` and `draft_reply` take no input from the model. `get_lead` can read only one lead.
 3. **Draft validation** (`guardrails.validate_draft`, plain code). Every `[n]` must exist. Every figure (fee, percentage, date, phone number) must appear in a retrieved passage or be the result of a calculator tool call. Arithmetic the model does in its head fails this check. The calculations are returned in `AgentResult.calculations` so the human approver can check them. Links and emails must come from the documents. No internal tool names or prompt text.
 4. **Fallback.** If a retry still fails validation, the reply becomes "a counsellor will reply personally", which states no facts and is flagged `fallback_reply`.
 5. **Flags for the reviewer.** `possible_prompt_injection` (a heuristic phrase match; it flags but never blocks), `not_eligible`, `draft_retried`, `fallback_reply`, `forced_step:<tool>`, `blocked_other_lead_lookup`, `step_limit_reached`.
 
 **Lead score** (`scoring.py`): program interest +15, meets eligibility +15, planned start within 90 days +15 (180 days +8), email and phone +10 (one of them +5), source (Referral 15, Website/Walk-in/Demo Class 10, ads 5), message intent (high 30, medium 15, low 0). Hot ≥ 70, warm ≥ 40, otherwise cold.
 
-**Zoho fields:** the lead uses Zoho API names (`First_Name`, `Last_Name`, `Email`, `Phone`, `Lead_Source`, `City`, `Description`). `Program_Interest`, `Qualification` and `Planned_Start` are custom fields to create in Zoho with exactly those API names. `ZohoLeadSource` (OAuth refresh-token flow, `GET /crm/v8/Leads/{id}`) is written but not yet run against a real account; that happens in Week 3.
+**Zoho fields:** the lead uses Zoho API names (`First_Name`, `Last_Name`, `Email`, `Phone`, `Lead_Source`, `City`, `Description`). `Program_Interest`, `Qualification` and `Planned_Start` are custom fields to create in Zoho with exactly those API names. `ZohoLeadSource` (OAuth refresh-token flow, `GET /crm/v8/Leads/{id}`) is written but not yet run against a real account; `scripts/zoho_check.py` is the first check to run when it is.
 
 ## How the RAG core works
 
@@ -96,14 +140,18 @@ Prompt rules, from `rag.py`:
 | `src/lead_assistant/store.py` | Chroma + embeddings setup (local or Gemini), index/model mismatch guard |
 | `src/lead_assistant/ingest.py` | Load → chunk → embed → store |
 | `src/lead_assistant/rag.py` | Retrieve, prompt, parse citations; picks Claude or Gemini by model name |
-| `src/lead_assistant/api.py` | FastAPI `/ask`, `/agent/process-lead` and `/health` |
+| `src/lead_assistant/api.py` | FastAPI `/ask`, `/agent/process-lead`, `/agent/decision` and `/health`; `X-API-Key` check |
 | `src/lead_assistant/agent.py` | LangGraph agent: tool definitions, prompts, agent/tools/finalize nodes, drafting with checks |
 | `src/lead_assistant/schemas.py` | Pydantic contracts: lead, tool arguments, LLM outputs, `AgentResult` |
 | `src/lead_assistant/scoring.py` | Rule score + LLM intent rating |
 | `src/lead_assistant/guardrails.py` | Draft validation and the injection-phrase detector (no LLM) |
 | `src/lead_assistant/calculator.py` | `calculate` and `shift_date`: safe arithmetic on documented figures only |
 | `src/lead_assistant/leads.py` | `get_lead` sources: sample file or Zoho CRM API |
-| `src/lead_assistant/audit.py` | One JSON line per agent run in `logs/audit.jsonl` |
+| `src/lead_assistant/audit.py` | One JSON line per agent run in `logs/audit.jsonl`, plus one per human decision |
+| `n8n/lead-approval.json` | The Week 3 workflow: webhook → agent → approval → Zoho update, with error branches |
+| `n8n/error-alert.json` | Error workflow: emails any failure the branches don't catch |
+| `scripts/zoho_check.py` | Read-only check of the Zoho token, custom fields and one real lead |
+| `docs/week3-setup.md` | Zoho fields, OAuth tokens, n8n credentials, webhook rule |
 | `data/sample_leads.json` | 4 normal leads (L-100x) and 5 hijack leads (L-200x), Zoho field names |
 | `eval/questions.jsonl` | 25-question test set (21 answerable, 3 unanswerable, 1 edge case) |
 | `eval/questions_hard.jsonl` | 10 harder questions: 2 paraphrases, 4 multi-document, 4 near-miss traps, each with a reference answer |
